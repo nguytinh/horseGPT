@@ -10,7 +10,6 @@ llama-cpp-python installed with [server] extras
 🚀 Installation & Setup
 
 Clone this repository
-bashgit clone https://github.com/yourusername/horsegpt.git
 cd horsegpt
 
 Install web app dependencies
