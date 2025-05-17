@@ -13,6 +13,14 @@ HorseGPT is a local LLM-powered chatbot interface for exploring horse racing top
 
 ---
 
+## **Run the Server in terminal**
+# 1. cd horsegpt_app
+# 2. npm i
+# 3. node server.js
+
+## **Start the Web App in another terminal**
+# 1. npm start
+
 ## 🦙 Start the Llama Model Server
 
 ```bash
@@ -27,12 +35,4 @@ python3 -m llama_cpp.server \
   --model ./llama-2-7b-chat.Q4_K_M.gguf \
   --host 127.0.0.1 \
   --port 8080
-
-## **Run the Server in terminal**
-# 1. cd horsegpt_app
-# 2. npm i
-# 3. node server.js
-
-## **Start the Web App in another terminal**
-# 1. npm start
 
