@@ -43,8 +43,8 @@ First Open a new terminal window:
 ### Start the Llama model server
 ```
 python3 -m llama_cpp.server \
-  --model ./llama-2-7b-chat.Q4_K_M.gguf \
-  --host 127.0.0.1 \
+  --model ~/480/gemma-3-finetune.Q8_0_updated.gguf \
+  --host 0.0.0.0 \
   --port 8080
 ```
 The application should now be running and accessible in your web browser.
