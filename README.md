@@ -51,5 +51,8 @@ The application should now be running and accessible in your web browser.
 
 ## 🔍 Features
 Chat interface for horse racing topics\
-Powered by Llama 2 7B Chat running locally\
+Powered by Gemma3 4b Chat running locally\
 Customizable prompts and settings
+
+### Our current best model (Gemma3 4b)
+https://drive.google.com/file/d/1pjyRJpZI7dH192t9n6eWQaPtvnt_6jkH/view?usp=sharing
