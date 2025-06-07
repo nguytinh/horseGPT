@@ -4,13 +4,7 @@ import re
 from datasets import load_dataset
 from unsloth.chat_templates import standardize_data_formats
 
-
-# NOTE THAT THIS IS RUN AFTER ALL CELLS IN UNSLOTH NOTEBOOK SO IF NOT, MANY THINGS WILL BE UNDEFINED.
 def extract_predicted_horse(generated_text):
-    """
-    Extracts the horse name from the model's prediction.
-    Tailored for text decoded with skip_special_tokens=True.
-    """
     primary_patterns = [
         r"(?:the predicted winner is:|predicted winner is:|winner is:|prediction:)\s*([A-Za-z0-9\s'-]+?)(?:\.|,|\n|$)",
         r"([A-Za-z0-9\s'-]+?)\s*(?:is the predicted winner|will win|is likely to win)(?:\.|,|\n|$)"
@@ -37,7 +31,6 @@ def extract_predicted_horse(generated_text):
 
 
 def get_actual_winner_from_conversations(conversation_list):
-    """ Extracts the actual winner from the 'assistant'/'model' turn in the conversation data """
     for turn in conversation_list:
         if turn['role'] == 'assistant' or turn['role'] == 'model':
             match = re.search(
@@ -51,12 +44,7 @@ def get_actual_winner_from_conversations(conversation_list):
                 return simple_name_match.group(1).strip()
     return None
 
-
-# --- General Evaluation Function ---
 def run_evaluation(model_to_eval, tokenizer_to_use, dataset_to_eval, dataset_name_desc, max_samples_to_eval=None):
-    """
-    Runs the evaluation loop on a given dataset and prints accuracy.
-    """
     print(f"\n--- Starting Evaluation on: {dataset_name_desc} ---")
 
     correct_predictions = 0
@@ -67,7 +55,7 @@ def run_evaluation(model_to_eval, tokenizer_to_use, dataset_to_eval, dataset_nam
     else:
         max_samples_to_eval = min(max_samples_to_eval, len(dataset_to_eval))
 
-    model_to_eval.eval()
+    model_to_eval.eval()  # Ensure model is in eval mode
 
     if not dataset_to_eval:
         print(f"Dataset '{dataset_name_desc}' is empty. Skipping evaluation.")
@@ -87,7 +75,7 @@ def run_evaluation(model_to_eval, tokenizer_to_use, dataset_to_eval, dataset_nam
             if 'conversations' not in example or not example['conversations'] or example['conversations'][0][
                 'role'] != 'user':
                 if i < 5: print(
-                    f"Warning (Dataset: {dataset_name_desc}, Ex: {i}): Skipping due to missing/malformed user prompt.")
+                    f"Warning (Dataset: {dataset_name_desc}, Ex: {i}): Skipping due to missing user prompt.")
                 continue
 
             raw_content = example['conversations'][0]['content']
@@ -117,7 +105,7 @@ def run_evaluation(model_to_eval, tokenizer_to_use, dataset_to_eval, dataset_nam
             # Use the tokenizer's own model_max_length from its text tokenizer component
             current_max_length = tokenizer_to_use.tokenizer.model_max_length if hasattr(tokenizer_to_use,
                                                                                         'tokenizer') else tokenizer_to_use.model_max_length
-            if current_max_length is None:
+            if current_max_length is None:  # Fallback if direct attribute is not found
                 current_max_length = model_to_eval.config.max_position_embeddings if hasattr(model_to_eval.config,
                                                                                              'max_position_embeddings') else 1024
 
@@ -181,7 +169,7 @@ def run_evaluation(model_to_eval, tokenizer_to_use, dataset_to_eval, dataset_nam
     }
 
 
-# --- Main script to run evaluations ---
+# 2. Evaluate on the new 2020 test dataset
 path_to_2020_data = "horse_betting_2020_test_data.json"
 
 try:
@@ -189,18 +177,20 @@ try:
     test_2020_dataset_raw = load_dataset("json", data_files=path_to_2020_data, split="train")
     print(f"\nSuccessfully loaded {len(test_2020_dataset_raw)} raw examples from {path_to_2020_data}")
 
+    # Standardize the 2020 dataset format
     test_2020_dataset_standardized = standardize_data_formats(
         test_2020_dataset_raw,
         aliases_for_assistant=["model"]
     )
     print(f"Standardized 2020 dataset: {len(test_2020_dataset_standardized)} examples")
 
+    # runs actual eval
     run_evaluation(model, tokenizer, test_2020_dataset_standardized, "2020 Test Set (Out-of-Distribution)",
                    max_samples_to_eval=len(test_2020_dataset_standardized))
 
 except FileNotFoundError:
     print(
-        f"\nERROR: File '{path_to_2020_data}' not found. Please create this file and place it in your Colab root directory.")
+        f"\nERROR: File '{path_to_2020_data}' not found.")
 except Exception as e:
     print(f"\nAn error occurred while processing or evaluating the 2020 dataset: {e}")
     import traceback
