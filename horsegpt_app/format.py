@@ -1,198 +1,162 @@
-import torch
-from tqdm import tqdm
-import re
-from datasets import load_dataset
-from unsloth.chat_templates import standardize_data_formats
-
-def extract_predicted_horse(generated_text):
-    primary_patterns = [
-        r"(?:the predicted winner is:|predicted winner is:|winner is:|prediction:)\s*([A-Za-z0-9\s'-]+?)(?:\.|,|\n|$)",
-        r"([A-Za-z0-9\s'-]+?)\s*(?:is the predicted winner|will win|is likely to win)(?:\.|,|\n|$)"
-    ]
-    for pattern in primary_patterns:
-        match = re.search(pattern, generated_text, re.IGNORECASE)
-        if match and match.group(1):
-            return match.group(1).strip()
-
-    cleaned_text_for_fallback = re.sub(r"^(here's my prediction|i think|my prediction is|the horse i predict is)\s*",
-                                       "", generated_text, flags=re.IGNORECASE).strip()
-    direct_name_match = re.match(r"^([A-Za-z0-9\s'-]+?)(?:\.|,|\n|$)", cleaned_text_for_fallback)
-    if direct_name_match and direct_name_match.group(1):
-        return direct_name_match.group(1).strip()
-
-    if len(cleaned_text_for_fallback.split()) < 10:  # Arbitrary short length
-        potential_names = re.findall(r"\b[A-Z][a-z']+(?:\s[A-Z][a-z']+)*\b", cleaned_text_for_fallback)
-        if potential_names:
-            if cleaned_text_for_fallback.lower().startswith(potential_names[0].lower()):
-                return potential_names[0].strip()
-            if len(potential_names) == 1:
-                return potential_names[0].strip()
-    return None
+import pandas as pd
+import json
+import glob
+import os
+import numpy as np
 
 
-def get_actual_winner_from_conversations(conversation_list):
-    for turn in conversation_list:
-        if turn['role'] == 'assistant' or turn['role'] == 'model':
-            match = re.search(
-                r"(?:The predicted winner is:|Predicted winner is:|My prediction is:|Winner:)\s*([A-Za-z0-9\s'-]+?)(?:\.|$)",
-                turn['content'], re.IGNORECASE)
-            if match and match.group(1):
-                return match.group(1).strip()
-            simple_name_match = re.match(r"^\s*([A-Za-z0-9\s'-]+?)\.?\s*$",
-                                         turn['content'])  # Handles just "Horse Name."
-            if simple_name_match:
-                return simple_name_match.group(1).strip()
-    return None
+def format_weight(st, lb):
+    if pd.isna(st) and pd.isna(lb):
+        return "N/A"
+    st_val = int(st) if pd.notna(st) else 0
+    lb_val = int(lb) if pd.notna(lb) else 0
+    return f"{st_val}st {lb_val}lb"
 
-def run_evaluation(model_to_eval, tokenizer_to_use, dataset_to_eval, dataset_name_desc, max_samples_to_eval=None):
-    print(f"\n--- Starting Evaluation on: {dataset_name_desc} ---")
 
-    correct_predictions = 0
-    total_evaluated = 0
+def format_odds(decimal_price):
+    if pd.isna(decimal_price) or decimal_price == 0:
+        return "N/A"
+    return f"{decimal_price:.3f}"
 
-    if max_samples_to_eval is None:
-        max_samples_to_eval = len(dataset_to_eval)
-    else:
-        max_samples_to_eval = min(max_samples_to_eval, len(dataset_to_eval))
 
-    model_to_eval.eval()  # Ensure model is in eval mode
+def create_finetuning_data(years, output_file="horse_betting_finetune_data.json", max_examples_per_year=None):
+    all_conversations = []
+    total_examples_processed = 0
 
-    if not dataset_to_eval:
-        print(f"Dataset '{dataset_name_desc}' is empty. Skipping evaluation.")
-        return
+    for year in years:
+        horses_file = f"horses_{year}.csv"
+        races_file = f"races_{year}.csv"
 
-    print(f"Device: {model_to_eval.device}")
-    print(f"Evaluating on {max_samples_to_eval} samples from {dataset_name_desc}...")
+        if not (os.path.exists(horses_file) and os.path.exists(races_file)):
+            print(f"Skipping year {year}: Files not found ({horses_file}, {races_file})")
+            continue
 
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+        print(f"Processing year {year}...")
+        try:
+            df_horses = pd.read_csv(horses_file)
+            df_races = pd.read_csv(races_file)
+        except Exception as e:
+            print(f"Error reading CSVs for year {year}: {e}")
+            continue
 
-    with torch.no_grad():
-        for i in tqdm(range(max_samples_to_eval), desc=f"Evaluating {dataset_name_desc}"):
-            example = dataset_to_eval[i]
+        df_horses['rid'] = pd.to_numeric(df_horses['rid'], errors='coerce')
+        df_races['rid'] = pd.to_numeric(df_races['rid'], errors='coerce')
+        df_horses.dropna(subset=['rid'], inplace=True)
+        df_races.dropna(subset=['rid'], inplace=True)
 
-            user_prompt_content_str = ""
-            if 'conversations' not in example or not example['conversations'] or example['conversations'][0][
-                'role'] != 'user':
-                if i < 5: print(
-                    f"Warning (Dataset: {dataset_name_desc}, Ex: {i}): Skipping due to missing user prompt.")
+        try:
+            df_horses['rid'] = df_horses['rid'].astype(int)
+            df_races['rid'] = df_races['rid'].astype(int)
+        except ValueError as ve:
+            print(f"Warning: Could not convert 'rid' to int for all rows in year {year}. Error: {ve}")
+            continue
+
+        df_merged = pd.merge(df_horses, df_races, on="rid", how="left", suffixes=('_horse', '_race'))
+
+        examples_this_year = 0
+        for rid, group in df_merged.groupby("rid"):
+            if max_examples_per_year and examples_this_year >= max_examples_per_year:
+                break
+
+            if group.empty:
                 continue
 
-            raw_content = example['conversations'][0]['content']
-            if isinstance(raw_content, list) and len(raw_content) > 0 and \
-                    isinstance(raw_content[0], dict) and raw_content[0].get("type") == "text":
-                user_prompt_content_str = raw_content[0]['text']
-            elif isinstance(raw_content, str):
-                user_prompt_content_str = raw_content
-            else:
-                if i < 5: print(
-                    f"Warning (Dataset: {dataset_name_desc}, Ex: {i}): Skipping due to unexpected user content format: {raw_content}")
+            race_info = group.iloc[0]  # Get race info from the first horse (all horses in group share race info)
+
+            winner_df = group[group["position"] == 1]  # Keep as df for consistency
+            if winner_df.empty:
                 continue
 
-            if not user_prompt_content_str:
-                if i < 5: print(
-                    f"Warning (Dataset: {dataset_name_desc}, Ex: {i}): Skipping due to empty user prompt string.")
+            winner_name = winner_df["horseName"].iloc[0]
+            if pd.isna(winner_name):
                 continue
 
-            messages_for_generation = [{"role": "user", "content": [{"type": "text", "text": user_prompt_content_str}]}]
+            user_prompt_parts = []
+            user_prompt_parts.append(f"Predict the winning horse for the upcoming race.")
+            user_prompt_parts.append(f"Race Details:")
+            user_prompt_parts.append(f"  Course: {race_info.get('course', 'N/A')}")
+            user_prompt_parts.append(f"  Race Title: {race_info.get('title', 'N/A')}")
+            user_prompt_parts.append(f"  Date: {race_info.get('date', 'N/A')}")
+            user_prompt_parts.append(f"  Distance: {race_info.get('distance_race', 'N/A')}")
+            user_prompt_parts.append(f"  Condition: {race_info.get('condition', 'N/A')}")
+            user_prompt_parts.append(f"  Class: {race_info.get('rclass', 'N/A')}")
+            user_prompt_parts.append(f"  Ages: {race_info.get('ages', 'N/A')}")
+            user_prompt_parts.append(
+                f"  Number of Runners: {len(group)}")
 
-            inputs_text_prompt = tokenizer_to_use.apply_chat_template(
-                messages_for_generation,
-                tokenize=False,
-                add_generation_prompt=True
-            )
+            user_prompt_parts.append(f"\nRunners:")
 
-            # Use the tokenizer's own model_max_length from its text tokenizer component
-            current_max_length = tokenizer_to_use.tokenizer.model_max_length if hasattr(tokenizer_to_use,
-                                                                                        'tokenizer') else tokenizer_to_use.model_max_length
-            if current_max_length is None:  # Fallback if direct attribute is not found
-                current_max_length = model_to_eval.config.max_position_embeddings if hasattr(model_to_eval.config,
-                                                                                             'max_position_embeddings') else 1024
+            # --- SHUFFLE THE HORSES WITHIN THE GROUP ---
+            shuffled_group = group.sample(frac=1,
+                                          random_state=int(rid) % (2 ** 32 - 1) if pd.notna(rid) else 42).reset_index(
+                drop=True)
+            # Using rid to seed shuffle for consistency per race, if rid is available and numeric
 
-            inputs = tokenizer_to_use([inputs_text_prompt], return_tensors="pt", truncation=True,
-                                      max_length=current_max_length).to(model_to_eval.device)
+            for _, horse_row in shuffled_group.iterrows():  # Iterate over the SHUFFLED group
+                age_val = horse_row.get('age')
+                age_display = f"{float(age_val):.0f}" if pd.notna(age_val) and isinstance(age_val,
+                                                                                          (int, float)) else str(
+                    age_val) if pd.notna(age_val) else "N/A"
 
-            outputs = model_to_eval.generate(
-                **inputs,
-                max_new_tokens=60,
-                temperature=0.1,
-                do_sample=False,
-                pad_token_id=tokenizer_to_use.eos_token_id
-            )
+                rpr_val = horse_row.get('RPR')
+                rpr_display = f"{float(rpr_val):.0f}" if pd.notna(rpr_val) and isinstance(rpr_val,
+                                                                                          (int, float)) else str(
+                    rpr_val) if pd.notna(rpr_val) else "N/A"
 
-            generated_ids_only = outputs[0][inputs["input_ids"].shape[1]:]
-            predicted_text = tokenizer_to_use.decode(generated_ids_only, skip_special_tokens=True).strip()
+                tr_val = horse_row.get('TR')
+                tr_display = f"{float(tr_val):.0f}" if pd.notna(tr_val) and isinstance(tr_val, (int, float)) else str(
+                    tr_val) if pd.notna(tr_val) else "N/A"
 
-            predicted_horse = extract_predicted_horse(predicted_text)
-            actual_horse = get_actual_winner_from_conversations(example['conversations'])
+                or_val = horse_row.get('OR')
+                or_display = f"{float(or_val):.0f}" if pd.notna(or_val) and isinstance(or_val, (int, float)) else str(
+                    or_val) if pd.notna(or_val) else "N/A"
 
-            if i < 5:  # Debug prints for the first 5 examples of this dataset
-                print(f"\n--- {dataset_name_desc} - Example {i} ---")
-                raw_decoded_prediction_with_specials = tokenizer_to_use.decode(generated_ids_only,
-                                                                               skip_special_tokens=False)
-                print(f"Structured messages_for_generation: {messages_for_generation}")
-                print(f"inputs_text_prompt (first 100 chars): '{inputs_text_prompt[:100]}...'")
-                print(f"Raw decoded prediction (with special tokens): '{raw_decoded_prediction_with_specials}'")
-                print(f"Cleaned predicted_text for extraction: '{predicted_text}'")
-                print(f"Extracted Predicted Horse: '{predicted_horse}'")
-                print(f"Extracted Actual Horse: '{actual_horse}'")
-
-            if predicted_horse and actual_horse:
-                if predicted_horse.lower().strip() == actual_horse.lower().strip():
-                    correct_predictions += 1
-                    if i < 5: print("MATCH!")
+                headgear_val = horse_row.get('headGear')
+                if pd.isna(headgear_val) or str(headgear_val).strip() == "":
+                    headgear_display = "None"
                 else:
-                    if i < 5: print(f"MISMATCH: Pred='{predicted_horse}', Actual='{actual_horse}'")
-            else:
-                if i < 5:
-                    print(f"COULD NOT EXTRACT for example {i} in {dataset_name_desc}:")
-                    print(f"  Predicted Text was: '{predicted_text}' (Predicted Horse: '{predicted_horse}')")
-                    print(f"  Actual Horse from data: '{actual_horse}'")
+                    headgear_display = str(headgear_val)
 
-            total_evaluated += 1
+                horse_details = (
+                    f"  - Horse: {horse_row.get('horseName', 'N/A')}, "
+                    f"Age: {age_display}, "
+                    f"Jockey: {horse_row.get('jockeyName', 'N/A')}, "
+                    f"Trainer: {horse_row.get('trainerName', 'N/A')}, "
+                    f"Weight: {format_weight(horse_row.get('weightSt'), horse_row.get('weightLb'))}, "
+                    f"Odds (decimal): {format_odds(horse_row.get('decimalPrice'))}, "
+                    f"RPR: {rpr_display}, "
+                    f"TR: {tr_display}, "
+                    f"OR: {or_display}, "
+                    f"Headgear: {headgear_display}"
+                )
+                user_prompt_parts.append(horse_details)
 
-    if total_evaluated > 0:
-        accuracy = (correct_predictions / total_evaluated) * 100
-        print(f"\n--- Results for: {dataset_name_desc} ---")
-        print(
-            f"Accuracy: {accuracy:.2f}% ({correct_predictions}/{total_evaluated} out of {max_samples_to_eval} samples evaluated)")
-    else:
-        print(f"\n--- Results for: {dataset_name_desc} ---")
-        print(f"No samples were successfully evaluated from {dataset_name_desc}.")
+            user_content = "\n".join(user_prompt_parts)
+            model_content = f"The predicted winner is: {winner_name}."
 
-    return {
-        "dataset_name": dataset_name_desc,
-        "accuracy": accuracy if total_evaluated > 0 else 0,
-        "correct_predictions": correct_predictions,
-        "total_evaluated": total_evaluated,
-        "samples_attempted": max_samples_to_eval
-    }
+            conversation = {
+                "conversations": [
+                    {"role": "user", "content": user_content},
+                    {"role": "model", "content": model_content}
+                ]
+            }
+            all_conversations.append(conversation)
+            examples_this_year += 1
+            total_examples_processed += 1
+
+        print(f"Processed {examples_this_year} examples for year {year}.")
+
+    with open(output_file, "w", encoding='utf-8') as f:
+        json.dump(all_conversations, f, indent=2, ensure_ascii=False)  # ensure_ascii=False for special characters
+
+    print(f"\nTotal {total_examples_processed} examples generated and saved to {output_file}")
 
 
-# 2. Evaluate on the new 2020 test dataset
-path_to_2020_data = "horse_betting_2020_test_data.json"
+# --- Configuration ---
+YEARS_TO_PROCESS = range(1990, 2020)
+MAX_EXAMPLES_PER_YEAR = 2000  # None to process all available examples for each year
 
-try:
-    # Load the 2020 dataset
-    test_2020_dataset_raw = load_dataset("json", data_files=path_to_2020_data, split="train")
-    print(f"\nSuccessfully loaded {len(test_2020_dataset_raw)} raw examples from {path_to_2020_data}")
-
-    # Standardize the 2020 dataset format
-    test_2020_dataset_standardized = standardize_data_formats(
-        test_2020_dataset_raw,
-        aliases_for_assistant=["model"]
-    )
-    print(f"Standardized 2020 dataset: {len(test_2020_dataset_standardized)} examples")
-
-    # runs actual eval
-    run_evaluation(model, tokenizer, test_2020_dataset_standardized, "2020 Test Set (Out-of-Distribution)",
-                   max_samples_to_eval=len(test_2020_dataset_standardized))
-
-except FileNotFoundError:
-    print(
-        f"\nERROR: File '{path_to_2020_data}' not found.")
-except Exception as e:
-    print(f"\nAn error occurred while processing or evaluating the 2020 dataset: {e}")
-    import traceback
-
-    traceback.print_exc()
+if __name__ == "__main__":
+    create_finetuning_data(YEARS_TO_PROCESS, max_examples_per_year=MAX_EXAMPLES_PER_YEAR,
+                           output_file="horse_betting_finetune_data_shuffled.json")
+    print("Data generation with shuffled runners complete.")
