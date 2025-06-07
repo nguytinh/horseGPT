@@ -7,6 +7,8 @@ Node.js + npm
 Llama 2 GGUF model (e.g. llama-2-7b-chat.Q4_K_M.gguf)
 llama-cpp-python installed with [server] extras
 
+Check Out Model Training Here: https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/Gemma3_(4B).ipynb
+
 ## 🚀 Installation & Setup
 
 ### Clone this repository
