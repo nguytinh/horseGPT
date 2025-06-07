@@ -7,7 +7,7 @@ Node.js + npm
 Llama 2 GGUF model (e.g. llama-2-7b-chat.Q4_K_M.gguf)
 llama-cpp-python installed with [server] extras
 
-We modified this pipeline with added additional cells for evaluation (see training.py) and did minor changes throughout: https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/Gemma3_(4B).ipynb
+For our model, we modified this pipeline with added additional cells for evaluation (see training.py) and did minor changes throughout: https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/Gemma3_(4B).ipynb
 
 ## 🚀 Installation & Setup
 
