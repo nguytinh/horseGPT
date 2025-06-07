@@ -169,7 +169,7 @@ def run_evaluation(model_to_eval, tokenizer_to_use, dataset_to_eval, dataset_nam
     }
 
 
-# 2. Evaluate on the new 2020 test dataset
+# Evaluate on the new 2020 test dataset
 path_to_2020_data = "horse_betting_2020_test_data.json"
 
 try:
