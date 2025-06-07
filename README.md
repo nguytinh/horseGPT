@@ -7,7 +7,7 @@ Node.js + npm
 Llama 2 GGUF model (e.g. llama-2-7b-chat.Q4_K_M.gguf)
 llama-cpp-python installed with [server] extras
 
-Check Out Model Training Here: https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/Gemma3_(4B).ipynb
+We modified this pipeline with an added additional cell for evaluation (see training.py) and did minor changes throughout: https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/Gemma3_(4B).ipynb
 
 ## 🚀 Installation & Setup
 
@@ -68,6 +68,6 @@ Predict the winning horse for the upcoming race.\nRace Details:\n Course: Plumpt
 
 expected : High Up In The Air
 
-To generate more, see the prompt generation code in our paper & use the dataset listed in our paper
+To generate more, see the prompt generation code in our paper (or format.py in this github) & use the dataset listed in our paper.
 
 
