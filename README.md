@@ -1,10 +1,11 @@
 # HorseGPT 🐎💬
 A local LLM-powered chatbot interface for exploring horse racing topics (or anything else!) using Gemma3 4B and Llama 2 7B Chat, served locally via llama-cpp-python.
+
 🧠 Requirements
 
 Python 3.10+
 Node.js + npm
-Llama 2 GGUF model (e.g. llama-2-7b-chat.Q4_K_M.gguf)
+LLM GGUF Model
 llama-cpp-python installed with [server] extras
 
 For our model, we modified this pipeline with added additional cells for evaluation (see training.py) and did minor changes throughout: https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/Gemma3_(4B).ipynb
