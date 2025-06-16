@@ -1,5 +1,5 @@
 # HorseGPT 🐎💬
-A local LLM-powered chatbot interface for exploring horse racing topics (or anything else!) using Llama 2 7B Chat, served locally via llama-cpp-python.
+A local LLM-powered chatbot interface for exploring horse racing topics (or anything else!) using Gemma3 4B and Llama 2 7B Chat, served locally via llama-cpp-python.
 🧠 Requirements
 
 Python 3.10+
